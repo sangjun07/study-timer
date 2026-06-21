@@ -1,0 +1,8 @@
+body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:20px auto;padding:0 16px;}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.controls{margin-bottom:12px;}
+#subject-input{padding:8px;width:60%;}
+button{padding:8px 12px;margin-left:8px;}
+.subject-card{border:1px solid #ddd;padding:10px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}
+.timer{font-family:monospace;}
+.small{font-size:0.9rem;color:#666;}
