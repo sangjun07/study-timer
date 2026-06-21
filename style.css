@@ -356,3 +356,5 @@ el('refresh-subject-chart').onclick = ()=> {
 renderSubjects();
 showTab('home');
 updateTotals();
+
+updateTotals();
