@@ -1,11 +1,25 @@
-// Study Timer - Tailwind-ready app.js
+// Study Timer with per-subject colors, 0.1s precision, and stats charts
 const STORAGE_KEY = 'study_timer_records';
 const subjectsKey = 'study_timer_subjects';
+const colorsKey = 'study_timer_colors';
 let subjects = JSON.parse(localStorage.getItem(subjectsKey) || '[]');
 let records = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+let colorMap = JSON.parse(localStorage.getItem(colorsKey) || '{}');
 let active = null; // {name, startTs, intervalId}
 
 const el = id => document.getElementById(id);
+
+// format seconds (float) to HH:MM:SS.s (one decimal)
+const formatHMSDecimal = secFloat => {
+  const totalSec = Math.floor(secFloat);
+  const h = String(Math.floor(totalSec/3600)).padStart(2,'0');
+  const m = String(Math.floor((totalSec%3600)/60)).padStart(2,'0');
+  const s = String(totalSec % 60).padStart(2,'0');
+  const dec = String(Math.floor((secFloat - Math.floor(secFloat)) * 10));
+  return `${h}:${m}:${s}.${dec}`;
+};
+
+// helper to format integer seconds (used rarely)
 const formatHMS = s => {
   const h = String(Math.floor(s/3600)).padStart(2,'0');
   const m = String(Math.floor((s%3600)/60)).padStart(2,'0');
@@ -13,39 +27,72 @@ const formatHMS = s => {
   return `${h}:${m}:${sec}`;
 };
 
-// 안전한 id 생성 (문자/숫자/언더스코어만)
-function safeId(name){
-  return name.replace(/[^a-zA-Z0-9_-]/g, '_');
-}
-
 function saveSubjects(){ localStorage.setItem(subjectsKey, JSON.stringify(subjects)); }
 function saveRecords(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); }
+function saveColors(){ localStorage.setItem(colorsKey, JSON.stringify(colorMap)); }
 
+function safeId(name){ return name.replace(/[^a-zA-Z0-9_-]/g, '_'); }
+function escapeHtml(str){ return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
+function escapeAttr(str){ return String(str).replace(/"/g,'&quot;'); }
+function cssEscape(str){ return String(str).replace(/\\/g,'\\\\').replace(/"/g,'\\"'); }
+
+// generate or retrieve a color for a subject (persistent)
+function getColorForSubject(name){
+  if(colorMap[name]) return colorMap[name];
+  // generate pleasing HSL color with good saturation/lightness
+  const hue = Math.floor(Math.abs(hashCode(name)) % 360);
+  const sat = 65 + Math.floor(Math.abs(hashCode(name + 's')) % 10); // 65-74
+  const light = 45 + Math.floor(Math.abs(hashCode(name + 'l')) % 10); // 45-54
+  const color = `hsl(${hue} ${sat}% ${light}%)`;
+  colorMap[name] = color;
+  saveColors();
+  return color;
+}
+
+// simple string hash to get deterministic hue
+function hashCode(str){
+  let h = 2166136261 >>> 0;
+  for(let i=0;i<str.length;i++){
+    h ^= str.charCodeAt(i);
+    h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
+  }
+  return h >>> 0;
+}
+
+// --- UI 렌더링 (Home) ---
 function renderSubjects(){
   const container = el('subjects');
   container.innerHTML = '';
   subjects.forEach(name=>{
     const sid = safeId(name);
-    const card = document.createElement('div');
-    card.className = 'bg-white rounded-lg shadow-md p-4 flex justify-between items-center';
-    card.innerHTML = `
-      <div>
-        <div class="font-semibold text-lg">${escapeHtml(name)}</div>
-        <div class="text-sm text-slate-500">누적: <span id="total-${sid}">00:00:00</span></div>
-      </div>
-      <div class="flex items-center gap-2">
-        <span id="timer-${sid}" class="timer-mono text-sm w-28 text-center">00:00:00</span>
-        <button class="start bg-green-500 text-white px-3 py-1 rounded" data-name="${escapeAttr(name)}">공부 시작</button>
-        <button class="stop bg-yellow-500 text-white px-3 py-1 rounded" data-name="${escapeAttr(name)}" disabled>정지</button>
-        <button class="delete bg-red-500 text-white px-2 py-1 rounded" data-name="${escapeAttr(name)}">삭제</button>
+    const color = getColorForSubject(name);
+    const wrapper = document.createElement('div');
+    wrapper.className = 'subject-card flex';
+    wrapper.style.border = '1px solid rgba(15,23,42,0.06)';
+    wrapper.style.background = 'transparent';
+    // left color bar + inner content
+    wrapper.innerHTML = `
+      <div style="width:6px;background:${color};"></div>
+      <div class="subject-card-inner" style="flex:1;">
+        <div>
+          <div class="font-semibold text-lg">${escapeHtml(name)}</div>
+          <div class="text-sm text-slate-500">누적: <span id="total-${sid}">00:00:00.0</span></div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="timer-${sid}" class="timer-mono text-sm w-28 text-center">00:00:00.0</span>
+          <button class="start bg-green-500 text-white px-3 py-1 rounded" data-name="${escapeAttr(name)}">공부 시작</button>
+          <button class="stop bg-yellow-500 text-white px-3 py-1 rounded" data-name="${escapeAttr(name)}" disabled>정지</button>
+          <button class="delete bg-red-500 text-white px-2 py-1 rounded" data-name="${escapeAttr(name)}">삭제</button>
+        </div>
       </div>
     `;
-    container.appendChild(card);
+    container.appendChild(wrapper);
   });
   updateTotals();
   attachHandlers();
 }
 
+// 이벤트 바인딩
 function attachHandlers(){
   document.querySelectorAll('.start').forEach(b=>{
     b.onclick = ()=> startTimer(b.dataset.name);
@@ -64,6 +111,7 @@ function addSubject(name){
   subjects.push(name);
   saveSubjects();
   renderSubjects();
+  renderStats();
 }
 
 function deleteSubject(name){
@@ -71,68 +119,224 @@ function deleteSubject(name){
     subjects = subjects.filter(s=>s!==name);
     saveSubjects();
     renderSubjects();
+    renderStats();
   }
 }
 
+// start timer with 0.1s updates
 function startTimer(name){
-  if(active && active.name !== name){
-    stopTimer(active.name);
-  }
+  if(active && active.name !== name) stopTimer(active.name);
   if(active && active.name === name) return;
   const startTs = Date.now();
   active = {name, startTs};
   const sid = safeId(name);
-  document.querySelector(`.start[data-name="${cssEscape(name)}"]`).disabled = true;
-  document.querySelector(`.stop[data-name="${cssEscape(name)}"]`).disabled = false;
+  const startBtn = document.querySelector(`.start[data-name="${cssEscape(name)}"]`);
+  const stopBtn = document.querySelector(`.stop[data-name="${cssEscape(name)}"]`);
+  if(startBtn) startBtn.disabled = true;
+  if(stopBtn) stopBtn.disabled = false;
   active.intervalId = setInterval(()=>{
-    const elapsed = Math.floor((Date.now() - active.startTs)/1000);
+    const elapsedMs = Date.now() - active.startTs;
+    const elapsedSec = elapsedMs / 1000;
     const tEl = el(`timer-${sid}`);
-    if(tEl) tEl.textContent = formatHMS(elapsed);
-  },1000);
+    if(tEl) tEl.textContent = formatHMSDecimal(elapsedSec);
+  },100); // 100ms -> 0.1s precision
 }
 
 function stopTimer(name){
   if(!active || active.name !== name) return;
   clearInterval(active.intervalId);
-  const elapsed = Math.floor((Date.now() - active.startTs)/1000);
+  const elapsedMs = Date.now() - active.startTs;
+  const elapsedSec = elapsedMs / 1000; // float seconds with decimals
   const date = new Date().toISOString().slice(0,10);
-  records.push({subject:name, date, duration: elapsed});
+  records.push({subject:name, date, duration: elapsedSec});
   saveRecords();
   const sid = safeId(name);
   const tEl = el(`timer-${sid}`);
-  if(tEl) tEl.textContent = '00:00:00';
+  if(tEl) tEl.textContent = '00:00:00.0';
   const startBtn = document.querySelector(`.start[data-name="${cssEscape(name)}"]`);
   const stopBtn = document.querySelector(`.stop[data-name="${cssEscape(name)}"]`);
   if(startBtn) startBtn.disabled = false;
   if(stopBtn) stopBtn.disabled = true;
   active = null;
   updateTotals();
+  renderStats(); // 통계 갱신
 }
 
 function updateTotals(){
   const today = new Date().toISOString().slice(0,10);
-  const todayTotal = records.filter(r=>r.date===today).reduce((s,r)=>s+r.duration,0);
-  el('today-total').textContent = `오늘 총 공부 시간: ${formatHMS(todayTotal)}`;
+  const todayTotal = records.filter(r=>r.date===today).reduce((s,r)=>s + (Number(r.duration)||0),0);
+  el('today-total').textContent = `오늘 총 공부 시간: ${formatHMSDecimal(todayTotal)}`;
   subjects.forEach(name=>{
     const sid = safeId(name);
-    const total = records.filter(r=>r.date===today && r.subject===name).reduce((s,r)=>s+r.duration,0);
+    const total = records.filter(r=>r.date===today && r.subject===name).reduce((s,r)=>s + (Number(r.duration)||0),0);
     const elTotal = el(`total-${sid}`);
-    if(elTotal) elTotal.textContent = formatHMS(total);
+    if(elTotal) elTotal.textContent = formatHMSDecimal(total);
   });
 }
 
-// 안전한 HTML/attribute 이스케이프
-function escapeHtml(str){
-  return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+// --- 통계 로직 ---
+function aggregateBySubject(rangeDays){
+  const cutoff = (rangeDays === 'all') ? null : (() => {
+    if(rangeDays === 'today') return new Date().toISOString().slice(0,10);
+    const days = Number(rangeDays);
+    const d = new Date();
+    d.setDate(d.getDate() - (days-1));
+    return d.toISOString().slice(0,10);
+  })();
+
+  const map = {};
+  records.forEach(r=>{
+    if(cutoff){
+      if(rangeDays === 'today'){
+        if(r.date !== cutoff) return;
+      } else {
+        if(r.date < cutoff) return;
+      }
+    }
+    map[r.subject] = (map[r.subject] || 0) + Number(r.duration || 0);
+  });
+  return map; // {subject: seconds (float)}
 }
-function escapeAttr(str){
-  return String(str).replace(/"/g,'&quot;');
+
+function renderStats(){
+  const range = el('stats-range').value;
+  const agg = aggregateBySubject(range);
+  // table
+  const tbody = el('stats-table-body');
+  tbody.innerHTML = '';
+  const rows = Object.keys(agg).sort((a,b)=>agg[b]-agg[a]);
+  rows.forEach(name=>{
+    const sec = agg[name];
+    const count = records.filter(r=>{
+      if(r.subject !== name) return false;
+      if(range === 'all') return true;
+      if(range === 'today') return r.date === new Date().toISOString().slice(0,10);
+      const days = Number(range);
+      const cutoff = (()=>{ const d=new Date(); d.setDate(d.getDate()-(days-1)); return d.toISOString().slice(0,10); })();
+      return r.date >= cutoff;
+    }).length;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="py-2 pr-4 font-medium">${escapeHtml(name)}</td>
+      <td class="py-2 pr-4 timer-mono">${formatHMSDecimal(sec)}</td>
+      <td class="py-2 pr-4">${count}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // chart (bar) - minutes with one decimal
+  const labels = rows;
+  const data = rows.map(n=> Math.round(((agg[n]||0)/60) * 10) / 10); // 분 단위, 1 decimal
+  const colors = rows.map(n=> getColorForSubject(n));
+  renderBarChart('stats-chart', labels, data, '분', colors);
+
+  // subject select for date-series
+  const sel = el('subject-select');
+  sel.innerHTML = '<option value="">과목 선택</option>';
+  rows.forEach(n=>{
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = n;
+    sel.appendChild(opt);
+  });
 }
-// CSS attribute selector 안전 처리 (간단 버전)
-function cssEscape(str){
-  // replace " with \" and backslash
-  return String(str).replace(/\\/g,'\\\\').replace(/"/g,'\\"');
+
+let statsChart = null;
+function renderBarChart(canvasId, labels, data, unitLabel, colors){
+  const ctx = el(canvasId).getContext('2d');
+  if(statsChart) statsChart.destroy();
+  statsChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: `총 시간 (${unitLabel})`,
+        data,
+        backgroundColor: colors,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true } }
+    }
+  });
 }
+
+// 날짜별 시계열 (선 그래프) for selected subject
+let subjectChart = null;
+function renderSubjectSeries(subject){
+  if(!subject) {
+    const ctx = el('subject-chart').getContext('2d');
+    if(subjectChart) subjectChart.destroy();
+    return;
+  }
+  // 집계: 날짜별 합계 (모든 기록)
+  const map = {};
+  records.forEach(r=>{
+    if(r.subject !== subject) return;
+    map[r.date] = (map[r.date] || 0) + Number(r.duration || 0);
+  });
+  // ensure sorted dates (if none, show empty)
+  const dates = Object.keys(map).sort();
+  const labels = dates;
+  const data = dates.map(d=> Math.round((map[d]/60) * 10) / 10); // 분 단위, 1 decimal
+  const ctx = el('subject-chart').getContext('2d');
+  if(subjectChart) subjectChart.destroy();
+  subjectChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: `${subject} 날짜별 합계 (분)`,
+        data,
+        borderColor: getColorForSubject(subject),
+        backgroundColor: hexToRgba(getColorForSubject(subject), 0.15),
+        fill: true,
+        tension: 0.2
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
+
+// convert HSL string to rgba with alpha (simple)
+function hexToRgba(hslString, alpha){
+  // hsl(XXX YY% ZZ%) -> convert to rgba via canvas trick
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = hslString;
+  const rgb = ctx.fillStyle; // returns rgb(...) or rgba(...)
+  // if rgb(...) -> convert to rgba(...)
+  if(rgb.startsWith('rgb(')){
+    return rgb.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+  }
+  return rgb;
+}
+
+// --- 탭 전환 ---
+function showTab(tab){
+  if(tab === 'home'){
+    el('view-home').classList.remove('hidden');
+    el('view-stats').classList.add('hidden');
+    el('tab-home').classList.add('active');
+    el('tab-stats').classList.remove('active');
+  } else {
+    el('view-home').classList.add('hidden');
+    el('view-stats').classList.remove('hidden');
+    el('tab-home').classList.remove('active');
+    el('tab-stats').classList.add('active');
+    renderStats();
+  }
+}
+
+// 바인딩: 탭 버튼
+el('tab-home').onclick = ()=> showTab('home');
+el('tab-stats').onclick = ()=> showTab('stats');
 
 // 바인딩: 추가 버튼
 el('add-subject').onclick = ()=>{
@@ -141,5 +345,14 @@ el('add-subject').onclick = ()=>{
   el('subject-input').value = '';
 };
 
+// 통계 관련 바인딩
+el('stats-range').onchange = ()=> renderStats();
+el('refresh-subject-chart').onclick = ()=> {
+  const s = el('subject-select').value;
+  renderSubjectSeries(s);
+};
+
 // 초기 렌더
 renderSubjects();
+showTab('home');
+updateTotals();
