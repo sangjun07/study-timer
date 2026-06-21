@@ -3,31 +3,25 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Study Timer</title>
-  <!-- Tailwind CDN -->
+  <title>Study Timer - PRD</title>
+
+  <!-- Tailwind (CDN) -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;700&display=swap" rel="stylesheet">
-  <!-- Chart.js CDN -->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    body { font-family: 'Noto Sans KR', system-ui, sans-serif; }
-    .timer-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Noto Sans Mono", monospace; }
-    .tab-btn.active { box-shadow: 0 6px 18px rgba(15,23,42,0.06); }
-    /* 카드 왼쪽 컬러 바를 위한 기본 스타일 */
-    .subject-card { border-radius: 0.5rem; overflow: hidden; }
-    .subject-card-inner { padding: 1rem; background: white; display:flex; justify-content:space-between; align-items:center; gap:0.75rem; }
-  </style>
+
+  <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-slate-50 min-h-screen">
+<body class="bg-slate-50 min-h-screen text-slate-800">
   <div class="max-w-5xl mx-auto p-6">
     <header class="flex items-center justify-between mb-6">
       <div>
-        <h1 class="text-2xl font-bold text-slate-800">Study Timer</h1>
-        <p class="text-sm text-slate-500">과목별 타이머와 일별 통계를 빠르게 확인하세요</p>
+        <h1 class="text-2xl font-bold">Study Timer</h1>
+        <p class="text-sm text-slate-500">과목별 타이머와 일/주/월 통계 대시보드</p>
       </div>
       <div class="text-right">
         <div class="inline-block text-sm text-white bg-gradient-to-r from-blue-600 to-cyan-500 px-4 py-2 rounded-lg shadow">
-          <span id="today-total" class="font-medium timer-mono">오늘 총 공부 시간: 00:00:00.0</span>
+          <span id="today-total" class="font-medium">오늘 총 공부 시간: 00:00:00</span>
         </div>
       </div>
     </header>
@@ -38,12 +32,12 @@
       <button id="tab-stats" class="tab-btn px-4 py-2 rounded-r-md bg-white border border-slate-200">Stats</button>
     </nav>
 
-    <!-- HOME (기본) -->
+    <!-- HOME -->
     <main id="view-home">
       <section class="bg-white rounded-xl shadow p-4 mb-6">
         <div class="flex gap-3">
-          <input id="subject-input" class="flex-1 border border-slate-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-300" placeholder="과목명 입력 (예: 수학)" />
-          <button id="add-subject" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">추가</button>
+          <input id="subject-input" class="flex-1 border border-slate-200 rounded-md px-3 py-2" placeholder="과목명 입력 (예: 국어, 수학, 코딩)" />
+          <button id="add-subject" class="bg-blue-600 text-white px-4 py-2 rounded-md">추가</button>
         </div>
       </section>
 
@@ -54,19 +48,24 @@
     <main id="view-stats" class="hidden">
       <section class="bg-white rounded-xl shadow p-4 mb-6">
         <div class="flex items-center justify-between mb-4">
-          <h2 class="text-lg font-semibold">과목별 통계</h2>
-          <div class="flex items-center gap-2">
+          <h2 class="text-lg font-semibold">대시보드</h2>
+          <div class="flex items-center gap-3">
             <label class="text-sm text-slate-500">기간:</label>
             <select id="stats-range" class="border rounded px-2 py-1">
-              <option value="today">오늘</option>
-              <option value="7">최근 7일</option>
-              <option value="30">최근 30일</option>
+              <option value="day">오늘</option>
+              <option value="week">이번 주 (최근 7일)</option>
+              <option value="month">이번 달</option>
               <option value="all" selected>전체</option>
             </select>
+            <button id="refresh-stats" class="bg-slate-600 text-white px-3 py-1 rounded">갱신</button>
           </div>
         </div>
 
-        <!-- Table -->
+        <div class="mb-4">
+          <div class="text-sm text-slate-600 mb-2">과목별 총합 (선택한 기간)</div>
+          <canvas id="stats-chart" height="120"></canvas>
+        </div>
+
         <div class="overflow-x-auto mb-4">
           <table class="min-w-full text-left">
             <thead>
@@ -74,20 +73,16 @@
                 <th class="py-2 pr-4">과목</th>
                 <th class="py-2 pr-4">총 시간</th>
                 <th class="py-2 pr-4">기록 수</th>
+                <th class="py-2 pr-4">상세보기</th>
               </tr>
             </thead>
             <tbody id="stats-table-body"></tbody>
           </table>
         </div>
-
-        <!-- Chart -->
-        <div>
-          <canvas id="stats-chart" height="120"></canvas>
-        </div>
       </section>
 
       <section class="bg-white rounded-xl shadow p-4">
-        <h3 class="font-medium mb-2">날짜별 합계 (선택 과목)</h3>
+        <h3 class="font-medium mb-2">날짜별 합계 (과목 선택)</h3>
         <div class="flex gap-3 items-center mb-3">
           <select id="subject-select" class="border rounded px-2 py-1">
             <option value="">과목 선택</option>
@@ -99,8 +94,24 @@
     </main>
 
     <footer class="mt-8 text-sm text-slate-500">
-      <div>데이터는 브라우저에 저장됩니다.</div>
+      <div>데이터는 브라우저 LocalStorage에 저장됩니다. (새로고침/재접속 시 유지)</div>
     </footer>
+  </div>
+
+  <!-- 상세 모달 -->
+  <div id="detail-modal" class="fixed inset-0 hidden items-center justify-center bg-black/40 z-50">
+    <div class="bg-white rounded-lg shadow-lg w-11/12 max-w-2xl p-4">
+      <div class="flex justify-between items-center mb-3">
+        <h4 id="modal-title" class="font-semibold">상세 통계</h4>
+        <button id="modal-close" class="text-slate-500">닫기</button>
+      </div>
+      <div id="modal-body">
+        <div class="mb-3">
+          <canvas id="modal-pie" height="160"></canvas>
+        </div>
+        <div id="modal-list" class="text-sm text-slate-600"></div>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>
